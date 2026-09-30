@@ -6,7 +6,7 @@ import time
 
 import requests
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_openai import OpenAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pinecone import Pinecone, ServerlessSpec
@@ -32,18 +32,29 @@ def download_pdf() -> None:
 
 
 def ensure_index(pc: Pinecone, index_name: str) -> None:
-    """Create the Pinecone index (1536 dims, cosine) if it does not exist."""
-    existing = [i["name"] for i in pc.list_indexes()]
-    if index_name not in existing:
+    """Create the Pinecone index (384 dims, cosine) if it does not exist."""
+    try:
+        existing_indexes = pc.list_indexes()
+        existing_names = [i.name for i in existing_indexes.indexes] if hasattr(existing_indexes, 'indexes') else []
+    except Exception:
+        existing_names = []
+    
+    if index_name not in existing_names:
         print(f"[4/5] Creating Pinecone index '{index_name}'...")
-        pc.create_index(
-            name=index_name,
-            dimension=config.EMBEDDING_DIMENSION,
-            metric=config.PINECONE_METRIC,
-            spec=ServerlessSpec(cloud=config.PINECONE_CLOUD, region=config.PINECONE_REGION),
-        )
-        while not pc.describe_index(index_name).status["ready"]:
-            time.sleep(2)
+        try:
+            pc.create_index(
+                name=index_name,
+                dimension=config.EMBEDDING_DIMENSION,
+                metric=config.PINECONE_METRIC,
+                spec=ServerlessSpec(cloud=config.PINECONE_CLOUD, region=config.PINECONE_REGION),
+            )
+            while not pc.describe_index(index_name).status["ready"]:
+                time.sleep(2)
+        except Exception as e:
+            if "ALREADY_EXISTS" in str(e):
+                print(f"[4/5] Pinecone index '{index_name}' already exists (created concurrently).")
+            else:
+                raise
     else:
         print(f"[4/5] Pinecone index '{index_name}' already exists.")
 
@@ -75,7 +86,7 @@ def run_ingestion(pdf_path: str = str(config.PDF_PATH), index_name: str = config
     # 5. Embed + upsert. Chunk text is stored as the 'text' field; page in metadata.
     # Deterministic IDs make re-running ingestion overwrite instead of duplicate.
     print("[5/5] Embedding and upserting to Pinecone...")
-    embeddings = OpenAIEmbeddings(model=config.EMBEDDING_MODEL)
+    embeddings = HuggingFaceEmbeddings(model_name=config.EMBEDDING_MODEL)
     vector_store = PineconeVectorStore.from_documents(
         documents=chunks,
         embedding=embeddings,

@@ -1,7 +1,8 @@
 """LangGraph RAG workflow: START -> retrieve -> generate -> END."""
 from typing import List, TypedDict
 
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_groq import ChatGroq
 from langchain_pinecone import PineconeVectorStore
 from langgraph.graph import END, START, StateGraph
 
@@ -30,9 +31,9 @@ def _is_refusal(answer: str) -> bool:
 
 def build_rag_graph(index_name: str = config.PINECONE_INDEX_NAME):
     config.require_env()
-    embeddings = OpenAIEmbeddings(model=config.EMBEDDING_MODEL)
+    embeddings = HuggingFaceEmbeddings(model_name=config.EMBEDDING_MODEL)
     vectorstore = PineconeVectorStore(index_name=index_name, embedding=embeddings)
-    llm = ChatOpenAI(model=config.LLM_MODEL, temperature=0)
+    llm = ChatGroq(model=config.LLM_MODEL, temperature=0, api_key=config.GROQ_API_KEY)
 
     def retrieve_node(state: AgentState):
         """Embed the question and fetch the top-k most similar chunks from Pinecone."""
